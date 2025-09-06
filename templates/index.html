@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>音声合成アプリ</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .dialogue-line { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .controls { margin: 20px 0; }
+        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; cursor: pointer; margin: 5px; }
+        button:hover { background: #45a049; }
+        #status { margin: 10px 0; padding: 10px; }
+        .success { background: #dff0d8; color: #3c763d; }
+        .error { background: #f2dede; color: #a94442; }
+    </style>
+</head>
+<body>
+    <h1>音声合成アプリ</h1>
+    <div id="status"></div>
+    
+    <div class="controls">
+        <button onclick="synthesize()" id="synthesizeButton">音声を合成</button>
+    </div>
+    
+    <div id="dialogue"></div>
+
+    <script>
+        let currentLines = {{ lines|tojson|safe if lines else '[]' }};
+        
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = isError ? 'error' : 'success';
+        }
+        
+        function updateDialogueDisplay() {
+            const dialogueDiv = document.getElementById('dialogue');
+            dialogueDiv.innerHTML = currentLines.map(line => `
+                <div class="dialogue-line">
+                    <p>テキスト: ${line.text}</p>
+                    <p>話者: ${line.id === 0 ? "男性" : "つくよみ"}</p>
+                    <p>ピッチ: ${line.pitch}</p>
+                    <p>速度: ${line.speed}</p>
+                </div>
+            `).join('');
+        }
+
+        // ページ読み込み時に会話データを表示
+        window.onload = function() {
+            {% if error %}
+                showStatus('{{ error }}', true);
+            {% else %}
+                updateDialogueDisplay();
+                {% if lines %}
+                    showStatus('text.txtを読み込みました！');
+                {% endif %}
+            {% endif %}
+        };
+
+        function synthesize() {
+            if (currentLines.length === 0) {
+                showStatus('合成するデータがありません', true);
+                return;
+            }
+            
+            showStatus('音声を合成中...');
+            document.getElementById('synthesizeButton').disabled = true;
+            
+            fetch('/synthesize', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('synthesizeButton').disabled = false;
+                if (data.error) {
+                    showStatus('エラー: ' + data.error, true);
+                } else {
+                    showStatus('音声の合成が完了しました！');
+                    // 音声を再生
+                    const audio = new Audio('/audio/' + data.file_path.split('/').pop());
+                    audio.play();
+                }
+            })
+            .catch(error => {
+                document.getElementById('synthesizeButton').disabled = false;
+                showStatus('エラーが発生しました: ' + error, true);
+            });
+        }
+    </script>
+</body>
+</html>
