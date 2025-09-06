@@ -84,8 +84,8 @@ def get_speakers():
 # グローバル変数としてスピーカー情報を保持
 speakers = get_speakers()
 if not speakers:
-    print("Failed to get speaker information. Exiting...")
-    exit(1)
+    print("Warning: Failed to get speaker information. App will run without voice synthesis.")
+    speakers = []  # 空のリストで初期化
 
 def get_text_file_path():
     """同じ階層のtext.txtファイルのパスを取得する"""
