@@ -29,6 +29,99 @@ def clean_text(text):
     text = text.strip()
     return text
 
+def download_and_setup_coeiroink():
+    """COEIROINKをダウンロードしてセットアップする"""
+    coeiroink_dir = "COEIROINK-linux-x64"
+    coeiroink_executable = os.path.join(coeiroink_dir, "COEIROINK")
+    
+    # 既にCOEIROINKが存在する場合はスキップ
+    if os.path.exists(coeiroink_executable):
+        print("COEIROINKは既に存在します")
+        return True
+    
+    try:
+        print("COEIROINKをダウンロード中...")
+        
+        # Linux版COEIROINKをダウンロード
+        download_url = "https://github.com/COEIROINK/COEIROINK/releases/latest/download/COEIROINK-linux-x64.zip"
+        
+        # wgetでダウンロード
+        result = subprocess.run([
+            "wget", "-O", "COEIROINK-linux-x64.zip", download_url
+        ], capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"ダウンロードに失敗しました: {result.stderr}")
+            return False
+        
+        print("COEIROINKの解凍中...")
+        
+        # unzipで解凍
+        result = subprocess.run([
+            "unzip", "-o", "COEIROINK-linux-x64.zip"
+        ], capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            print(f"解凍に失敗しました: {result.stderr}")
+            return False
+        
+        # 実行権限を付与
+        if os.path.exists(coeiroink_executable):
+            os.chmod(coeiroink_executable, 0o755)
+            print("COEIROINKのセットアップが完了しました")
+            
+            # ダウンロードファイルを削除
+            if os.path.exists("COEIROINK-linux-x64.zip"):
+                os.remove("COEIROINK-linux-x64.zip")
+            
+            return True
+        else:
+            print("COEIROINKの実行ファイルが見つかりません")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("COEIROINKのダウンロードがタイムアウトしました")
+        return False
+    except Exception as e:
+        print(f"COEIROINKのセットアップ中にエラーが発生しました: {str(e)}")
+        return False
+
+def start_coeiroink_server():
+    """COEIROINKサーバーを起動する"""
+    coeiroink_executable = os.path.join("COEIROINK-linux-x64", "COEIROINK")
+    
+    if not os.path.exists(coeiroink_executable):
+        print("COEIROINKが見つかりません。ダウンロードを試行します...")
+        if not download_and_setup_coeiroink():
+            print("COEIROINKのセットアップに失敗しました")
+            return None
+    
+    try:
+        print("COEIROINKサーバーを起動中...")
+        
+        # COEIROINKサーバーをバックグラウンドで起動
+        process = subprocess.Popen([
+            coeiroink_executable,
+            "--host", "0.0.0.0",
+            "--port", "50032"
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # サーバーの起動を待つ
+        time.sleep(5)
+        
+        # サーバーが起動しているかチェック
+        if check_coeiroink_server():
+            print("COEIROINKサーバーが正常に起動しました")
+            return process
+        else:
+            print("COEIROINKサーバーの起動に失敗しました")
+            process.terminate()
+            return None
+            
+    except Exception as e:
+        print(f"COEIROINKサーバーの起動中にエラーが発生しました: {str(e)}")
+        return None
+
 def get_speakers():
     """利用可能なスピーカー情報を取得する"""
     try:
@@ -80,6 +173,9 @@ def get_speakers():
     except Exception as e:
         print(f"サーバーへの接続に失敗しました: {e}")
         return None
+
+# COEIROINKサーバーを起動
+coeiroink_process = start_coeiroink_server()
 
 # グローバル変数としてスピーカー情報を保持
 speakers = get_speakers()
@@ -417,11 +513,12 @@ def get_audio(filename):
     return send_file(os.path.join(output_dir, filename))
 
 if __name__ == "__main__":
-    # templatesディレクトリが存在しない場合は作成
-    os.makedirs("templates", exist_ok=True)
-    
-    # HTMLテンプレートを作成
-    with open("templates/index.html", "w", encoding="utf-8") as f:
+    try:
+        # templatesディレクトリが存在しない場合は作成
+        os.makedirs("templates", exist_ok=True)
+        
+        # HTMLテンプレートを作成
+        with open("templates/index.html", "w", encoding="utf-8") as f:
         f.write("""<!DOCTYPE html>
 <html>
 <head>
@@ -514,4 +611,16 @@ if __name__ == "__main__":
 </body>
 </html>""")
     
-    app.run(host='0.0.0.0', port=8001, debug=True) 
+        app.run(host='0.0.0.0', port=8001, debug=True)
+    except KeyboardInterrupt:
+        print("アプリケーションを終了しています...")
+    finally:
+        # COEIROINKプロセスを終了
+        if 'coeiroink_process' in globals() and coeiroink_process:
+            print("COEIROINKサーバーを終了しています...")
+            coeiroink_process.terminate()
+            try:
+                coeiroink_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                coeiroink_process.kill()
+            print("COEIROINKサーバーが終了しました")
