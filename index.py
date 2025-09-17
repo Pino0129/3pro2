@@ -45,14 +45,21 @@ def download_and_setup_coeiroink():
         # Linux版COEIROINKをダウンロード
         download_url = "https://github.com/COEIROINK/COEIROINK/releases/latest/download/COEIROINK-linux-x64.zip"
         
-        # wgetでダウンロード
+        # curlでダウンロード（wgetの代替）
         result = subprocess.run([
-            "wget", "-O", "COEIROINK-linux-x64.zip", download_url
+            "curl", "-L", "-o", "COEIROINK-linux-x64.zip", download_url
         ], capture_output=True, text=True, timeout=300)
         
         if result.returncode != 0:
-            print(f"ダウンロードに失敗しました: {result.stderr}")
-            return False
+            print(f"curlでのダウンロードに失敗しました: {result.stderr}")
+            # wgetを試行
+            result = subprocess.run([
+                "wget", "-O", "COEIROINK-linux-x64.zip", download_url
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                print(f"wgetでのダウンロードも失敗しました: {result.stderr}")
+                return False
         
         print("COEIROINKの解凍中...")
         
@@ -90,6 +97,9 @@ def start_coeiroink_server():
     """COEIROINKサーバーを起動する"""
     coeiroink_executable = os.path.join("COEIROINK-linux-x64", "COEIROINK")
     
+    print(f"COEIROINK実行ファイルのパス: {coeiroink_executable}")
+    print(f"ファイルの存在確認: {os.path.exists(coeiroink_executable)}")
+    
     if not os.path.exists(coeiroink_executable):
         print("COEIROINKが見つかりません。ダウンロードを試行します...")
         if not download_and_setup_coeiroink():
@@ -109,6 +119,14 @@ def start_coeiroink_server():
         # サーバーの起動を待つ
         time.sleep(5)
         
+        # プロセスの状態を確認
+        if process.poll() is not None:
+            stdout, stderr = process.communicate()
+            print(f"COEIROINKプロセスが終了しました。終了コード: {process.returncode}")
+            print(f"標準出力: {stdout.decode()}")
+            print(f"エラー出力: {stderr.decode()}")
+            return None
+        
         # サーバーが起動しているかチェック
         if check_coeiroink_server():
             print("COEIROINKサーバーが正常に起動しました")
@@ -120,6 +138,45 @@ def start_coeiroink_server():
             
     except Exception as e:
         print(f"COEIROINKサーバーの起動中にエラーが発生しました: {str(e)}")
+        return None
+
+def synthesize_with_google_tts(text, voice_name="ja-JP-Wavenet-A"):
+    """Google Cloud Text-to-Speechを使用して音声合成"""
+    try:
+        from google.cloud import texttospeech
+        
+        # クライアントを初期化
+        client = texttospeech.TextToSpeechClient()
+        
+        # 音声合成の設定
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="ja-JP",
+            name=voice_name
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.LINEAR16
+        )
+        
+        # 音声合成を実行
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config
+        )
+        
+        # 一時ファイルに保存
+        temp_file = f"temp_google_{len(text)}.wav"
+        with open(temp_file, "wb") as out:
+            out.write(response.audio_content)
+        
+        return temp_file
+        
+    except ImportError:
+        print("Google Cloud Text-to-Speechライブラリがインストールされていません")
+        return None
+    except Exception as e:
+        print(f"Google TTSでの音声合成に失敗しました: {str(e)}")
         return None
 
 def get_speakers():
@@ -182,6 +239,8 @@ speakers = get_speakers()
 if not speakers:
     print("Warning: Failed to get speaker information. App will run without voice synthesis.")
     speakers = []  # 空のリストで初期化
+    print("COEIROINKが利用できないため、音声合成機能は無効です。")
+    print("代替手段として、Google Cloud Text-to-Speechの使用を検討してください。")
 
 def get_text_file_path():
     """同じ階層のtext.txtファイルのパスを取得する"""
@@ -488,23 +547,59 @@ def index():
 def synthesize():
     """音声合成を実行"""
     try:
+        print("=== 音声合成リクエスト開始 ===")
+        
+        # COEIROINKサーバーの状態を確認
+        if not check_coeiroink_server():
+            error_msg = "COEIROINKサーバーに接続できません。サーバーが起動していないか、ダウンロードに失敗している可能性があります。"
+            print(error_msg)
+            return {"error": error_msg}, 400
+        
+        # スピーカー情報の確認
+        if not speakers:
+            error_msg = "利用可能なスピーカー情報がありません。COEIROINKサーバーの起動に失敗している可能性があります。"
+            print(error_msg)
+            return {"error": error_msg}, 400
+        
+        print(f"利用可能なスピーカー数: {len(speakers)}")
+        
         # 同じ階層のtext.txtを再度読み込む
         file_path = get_text_file_path()
+        print(f"テキストファイルのパス: {file_path}")
+        
+        if not os.path.exists(file_path):
+            error_msg = f"テキストファイルが見つかりません: {file_path}"
+            print(error_msg)
+            return {"error": error_msg}, 400
         
         with open(file_path, 'r', encoding='utf-8') as f:
             text_content = f.read()
+        
+        print(f"テキストファイルの内容（最初の100文字）: {text_content[:100]}...")
+        
         lines = parse_text_content(text_content)
         
         if not lines:
-            return {"error": "合成するデータがありません"}, 400
+            error_msg = "合成するデータがありません。text.txtの形式を確認してください。"
+            print(error_msg)
+            return {"error": error_msg}, 400
+        
+        print(f"解析された行数: {len(lines)}")
         
         output_path, error = synthesize_dialogue(lines, speakers)
         if error:
+            print(f"音声合成エラー: {error}")
             return {"error": error}, 400
             
+        print(f"音声合成成功: {output_path}")
         return {"success": True, "file_path": output_path}
+        
     except Exception as e:
-        return {"error": str(e)}, 500
+        error_msg = f"予期せぬエラーが発生しました: {str(e)}"
+        print(error_msg)
+        import traceback
+        print(f"エラーの詳細:\n{traceback.format_exc()}")
+        return {"error": error_msg}, 500
 
 @app.route("/audio/<path:filename>")
 def get_audio(filename):
