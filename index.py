@@ -614,7 +614,7 @@ if __name__ == "__main__":
         
         # HTMLテンプレートを作成
         with open("templates/index.html", "w", encoding="utf-8") as f:
-        f.write("""<!DOCTYPE html>
+            f.write("""<!DOCTYPE html>
 <html>
 <head>
     <title>音声合成アプリ</title>
