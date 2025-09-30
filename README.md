@@ -40,3 +40,4 @@ COEIROINKを使用した音声合成Webアプリケーションです。
 - `COEIROINK_TIMEOUT`: タイムアウト時間（デフォルト: 30秒）
 - `AUDIO_OUTPUT_DIR`: 音声ファイルの出力ディレクトリ
 - `SECRET_KEY`: Flaskのシークレットキー
+# 3pro2
