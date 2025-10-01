@@ -2,26 +2,23 @@
 FROM python:3.11-slim
 
 # 必要パッケージ
-RUN apt-get update && apt-get install -y wget unzip curl ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y unzip ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # 作業ディレクトリ
 WORKDIR /app
 
-# Flask アプリをコピー
+# Flask アプリと zip ファイルをコピー
 COPY . /app
 
-# 依存関係
-RUN pip install --no-cache-dir flask requests pydub
-
-RUN wget --no-check-certificate \
-    -O voicevox.zip \
-    https://github.com/VOICEVOX/voicevox_engine/releases/download/0.24.1/voicevox_engine_linux_x64.zip \
-    && unzip voicevox.zip -d /opt/voicevox_engine \
-    && rm voicevox.zip \
+# VOICEVOX Engine を zip から展開（ファイル名に合わせて修正）
+RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
     && chmod +x /opt/voicevox_engine/run
 
-# ポート設定
+# Python ライブラリ
+RUN pip install --no-cache-dir flask requests pydub
+
+# ポート
 EXPOSE 8001 50021
 
-# VOICEVOX Engine と Flask を同時起動
+# 起動コマンド
 CMD ["sh", "-c", "/opt/voicevox_engine/run --host 0.0.0.0 & python app.py"]
