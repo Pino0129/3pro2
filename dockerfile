@@ -14,7 +14,7 @@ COPY . /app
 RUN pip install --no-cache-dir flask requests pydub
 
 # VOICEVOX Engine ダウンロード（最新安定版URLに置き換える）
-RUN wget --no-check-certificate https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.24.0/voicevox_engine_linux_x64.zip \
+RUN wget --no-check-certificate https://github.com/VOICEVOX/voicevox_engine/releases/tag/0.24.1/voicevox_engine_linux_x64.zip \
     && unzip voicevox.zip -d /opt/voicevox_engine \
     && rm voicevox.zip \
     && chmod +x /opt/voicevox_engine/run
