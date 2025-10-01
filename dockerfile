@@ -16,10 +16,11 @@ COPY . /app
 RUN pip install --no-cache-dir flask requests pydub
 
 # VOICEVOX Engine ダウンロード
-RUN wget https://github.com/VOICEVOX/voicevox_engine/releases/latest/download/voicevox_engine_linux.zip -O voicevox.zip && \
-    unzip voicevox.zip -d /opt/voicevox_engine && \
-    rm voicevox.zip && \
-    chmod +x /opt/voicevox_engine/run
+RUN wget --no-check-certificate \
+    https://github.com/VOICEVOX/voicevox_engine/releases/download/0.24.2/voicevox_engine_linux_x64.zip -O voicevox.zip \
+    && unzip voicevox.zip -d /opt/voicevox_engine \
+    && rm voicevox.zip \
+    && chmod +x /opt/voicevox_engine/run
 
 # 起動スクリプトをコピー
 COPY entrypoint.sh /app/entrypoint.sh
