@@ -15,11 +15,10 @@ COPY . /app
 # Python 依存関係
 RUN pip install --no-cache-dir flask requests pydub
 
-# VOICEVOX Engine ダウンロード
-RUN wget --no-check-certificate \
-    https://github.com/VOICEVOX/voicevox_engine/releases/download/0.24.2/voicevox_engine_linux_x64.zip -O voicevox.zip \
-    && unzip voicevox.zip -d /opt/voicevox_engine \
-    && rm voicevox.zip \
+# プロジェクト内の zip を /opt/voicevox_engine に解凍
+COPY voicevox_engine_linux.zip /opt/voicevox_engine.zip
+RUN unzip /opt/voicevox_engine.zip -d /opt/voicevox_engine \
+    && rm /opt/voicevox_engine.zip \
     && chmod +x /opt/voicevox_engine/run
 
 # 起動スクリプトをコピー
