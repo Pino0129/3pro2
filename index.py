@@ -2,7 +2,7 @@ import os
 import re
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, send_file
+from flask import Flask, send_file, jsonify
 from pathlib import Path
 import requests
 
@@ -23,7 +23,7 @@ SPEAKERS = {
     "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1)) # 四国めたん
 }
 
-# VOICEVOX Engine ホスト
+# VOICEVOX Engine ホスト（entrypoint.sh で同じコンテナ内で起動する想定）
 VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://localhost:50021")
 
 # 音声出力先
@@ -113,22 +113,22 @@ def parse_text_content(text_content):
 def index():
     file_path = get_text_file_path()
     if not os.path.exists(file_path):
-        return "text.txt が存在しません"
+        return jsonify({"error": "text.txt が存在しません"}), 404
     with open(file_path, 'r', encoding='utf-8') as f:
         text_content = f.read()
     lines = parse_text_content(text_content)
-    return {"lines": lines}
+    return jsonify({"lines": lines})
 
 @app.route("/synthesize", methods=["POST"])
 def synthesize():
     file_path = get_text_file_path()
     if not os.path.exists(file_path):
-        return {"error": "text.txt がありません"}, 400
+        return jsonify({"error": "text.txt がありません"}), 400
     with open(file_path, 'r', encoding='utf-8') as f:
         text_content = f.read()
     lines = parse_text_content(text_content)
     if not lines:
-        return {"error": "合成するデータがありません"}, 400
+        return jsonify({"error": "合成するデータがありません"}), 400
 
     temp_files = []
     for line in lines:
@@ -138,7 +138,7 @@ def synthesize():
             temp_files.append(audio_path)
 
     if not temp_files:
-        return {"error": "音声生成失敗"}, 500
+        return jsonify({"error": "音声生成失敗"}), 500
 
     output_filename = generate_filename()
     final_audio_path = os.path.join(OUTPUT_DIR, output_filename)
@@ -151,7 +151,7 @@ def synthesize():
         except:
             pass
 
-    return {"success": True, "filename": os.path.basename(combined_path)}
+    return jsonify({"success": True, "filename": os.path.basename(combined_path)})
 
 @app.route("/audio/<path:filename>")
 def get_audio(filename):
@@ -161,4 +161,6 @@ def get_audio(filename):
     return send_file(fp, mimetype="audio/mpeg")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8001)
+    # Render 用 PORT 環境変数に対応
+    PORT = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=PORT)
