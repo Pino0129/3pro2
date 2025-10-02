@@ -16,7 +16,7 @@ SPEAKERS = {
     "male": int(os.environ.get("VOICEVOX_MALE_ID", 13)),
     "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1))
 }
-VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://voicevox:50021")
+VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://127.0.0.1:50021")
 
 OUTPUT_DIR = Path("static/audio")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
