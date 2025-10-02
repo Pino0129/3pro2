@@ -4,9 +4,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 import requests
-from flask import Flask, render_template_string, Response, jsonify, send_file
+from flask import Flask, render_template, jsonify, send_file
 
-from pydub import AudioSegment  # pydub必須
+from pydub import AudioSegment
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dummy-secret")
@@ -34,27 +34,25 @@ def generate_filename():
 
 def synthesize_text(text, speaker_id):
     """VOICEVOXからWAVを取得してMP3に変換"""
-    r = requests.post(f"{VOICEVOX_HOST}/v1/tts", json={
-        "text": text,
-        "speaker": speaker_id,
-        "format": "wav"
-    })
-    if r.status_code != 200:
-        print("音声生成失敗:", r.status_code, r.text)
+    try:
+        r = requests.post(f"{VOICEVOX_HOST}/v1/tts", json={
+            "text": text,
+            "speaker": speaker_id,
+            "format": "wav"
+        })
+        r.raise_for_status()
+    except Exception as e:
+        print("音声生成失敗:", e)
         return None
 
     wav_path = OUTPUT_DIR / f"{speaker_id}_{int(time.time()*1000)}.wav"
     with open(wav_path, "wb") as f:
         f.write(r.content)
 
-    # MP3に変換
     mp3_path = wav_path.with_suffix(".mp3")
     audio = AudioSegment.from_wav(wav_path)
     audio.export(mp3_path, format="mp3")
-
-    # WAVは不要なので削除
     wav_path.unlink(missing_ok=True)
-
     return str(mp3_path)
 
 def combine_audio_files(audio_files, output_path):
@@ -92,7 +90,9 @@ def parse_text_content(text_content):
     return lines
 
 # ---------------- ルーティング ----------------
-INDEX_HTML = """
+@app.route("/")
+def index_route():
+    return """
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -102,27 +102,28 @@ INDEX_HTML = """
 <body>
 <h2>VOICEVOX TTSデモ</h2>
 <button id="speakBtn">読み上げ</button>
+<div id="status"></div>
 <script>
 document.getElementById("speakBtn").addEventListener("click", () => {
+    document.getElementById("status").textContent = "音声を合成中...";
     fetch("/synthesize", { method: "POST" })
       .then(r => r.json())
       .then(data => {
           if(data.success){
               const audio = new Audio(`/audio/${data.filename}`);
               audio.play();
+              document.getElementById("status").textContent = "音声の合成が完了しました！";
           } else {
-              alert("音声生成失敗: " + (data.error || "unknown"));
+              document.getElementById("status").textContent = "音声生成失敗: " + (data.error || "unknown");
           }
+      }).catch(e=>{
+          document.getElementById("status").textContent = "エラー: " + e;
       });
 });
 </script>
 </body>
 </html>
 """
-
-@app.route("/")
-def index_route():
-    return render_template_string(INDEX_HTML)
 
 @app.route("/synthesize", methods=["POST"])
 def synthesize_route():
@@ -141,6 +142,7 @@ def synthesize_route():
         audio_path = synthesize_text(text, line["id"])
         if audio_path:
             temp_files.append(audio_path)
+
     if not temp_files:
         return jsonify({"error": "音声生成失敗"}), 500
 
@@ -148,7 +150,6 @@ def synthesize_route():
     final_audio_path = OUTPUT_DIR / output_filename
     combine_audio_files(temp_files, final_audio_path)
 
-    # 一時ファイル削除
     for temp_file in temp_files:
         try: os.remove(temp_file)
         except: pass
@@ -162,7 +163,6 @@ def get_audio(filename):
         return "Not found", 404
     return send_file(fp, mimetype="audio/mpeg")
 
-# ---------------- 起動 ----------------
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8001))
     app.run(host="0.0.0.0", port=PORT)
