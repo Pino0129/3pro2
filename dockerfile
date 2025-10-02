@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir flask requests pydub
 # ✅ ZIP 展開
 RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
     && ls -R /opt/voicevox_engine \
-    && chmod +x /opt/voicevox_engine/voicevox_engine-0.13.3/run || true
+    && chmod +x /opt/voicevox_engine/voicevox_engine-0.13.3/run.py || true
 
 # ポート
 EXPOSE 8001 50021
