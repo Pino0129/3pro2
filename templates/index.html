@@ -25,7 +25,7 @@
     <div id="dialogue"></div>
 
     <script>
-        let currentLines = {{ lines|tojson|safe if lines else '[]' }};
+        let currentLines = {{ lines|tojson(force_ascii=False)|safe if lines else '[]' }};
         
         function showStatus(message, isError = false) {
             const status = document.getElementById('status');
@@ -45,16 +45,9 @@
             `).join('');
         }
 
-        // ページ読み込み時に会話データを表示
         window.onload = function() {
-            {% if error %}
-                showStatus('{{ error }}', true);
-            {% else %}
-                updateDialogueDisplay();
-                {% if lines %}
-                    showStatus('text.txtを読み込みました！');
-                {% endif %}
-            {% endif %}
+            updateDialogueDisplay();
+            if (currentLines.length) showStatus('text.txtを読み込みました！');
         };
 
         function synthesize() {
@@ -66,9 +59,7 @@
             showStatus('音声を合成中...');
             document.getElementById('synthesizeButton').disabled = true;
             
-            fetch('/synthesize', {
-                method: 'POST'
-            })
+            fetch('/synthesize', { method: 'POST' })
             .then(response => response.json())
             .then(data => {
                 document.getElementById('synthesizeButton').disabled = false;
@@ -76,8 +67,7 @@
                     showStatus('エラー: ' + data.error, true);
                 } else {
                     showStatus('音声の合成が完了しました！');
-                    // 音声を再生
-                    const audio = new Audio('/audio/' + data.file_path.split('/').pop());
+                    const audio = new Audio(data.file_path);
                     audio.play();
                 }
             })
