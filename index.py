@@ -4,29 +4,20 @@ import time
 from datetime import datetime
 from pathlib import Path
 import requests
-from flask import Flask, render_template, Response, jsonify, send_file
-import json
+from flask import Flask, render_template_string, Response, jsonify, send_file
 
-try:
-    from pydub import AudioSegment
-    AUDIO_MERGE_AVAILABLE = True
-except ImportError:
-    AUDIO_MERGE_AVAILABLE = False
-    print("pydub not available, simple concatenation will be used")
+from pydub import AudioSegment  # pydub必須
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dummy-secret")
 
-# VOICEVOX設定
+# ---------------- VOICEVOX設定 ----------------
 SPEAKERS = {
-    "male": int(os.environ.get("VOICEVOX_MALE_ID", 9)),
+    "male": int(os.environ.get("VOICEVOX_MALE_ID", 13)),
     "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1))
 }
-
-# VOICEVOX Engine ホスト（Render環境では service name: voicevox）
 VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://voicevox:50021")
 
-# 音声出力先
 OUTPUT_DIR = Path("static/audio")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -35,52 +26,46 @@ def clean_text(text):
     return re.sub(r'^セリフ:\s*', '', text).strip()
 
 def get_text_file_path():
-    return os.path.join(os.path.dirname(__file__), "text.txt")
+    return Path(__file__).parent / "text.txt"
 
 def generate_filename():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"voice_dialogue_{timestamp}.mp3"
 
 def synthesize_text(text, speaker_id):
+    """VOICEVOXからWAVを取得してMP3に変換"""
     r = requests.post(f"{VOICEVOX_HOST}/v1/tts", json={
         "text": text,
         "speaker": speaker_id,
         "format": "wav"
     })
     if r.status_code != 200:
-        print("音声生成失敗:", r.text)
+        print("音声生成失敗:", r.status_code, r.text)
         return None
-    filename = OUTPUT_DIR / f"{speaker_id}_{int(time.time()*1000)}.wav"
-    with open(filename, "wb") as f:
+
+    wav_path = OUTPUT_DIR / f"{speaker_id}_{int(time.time()*1000)}.wav"
+    with open(wav_path, "wb") as f:
         f.write(r.content)
-    return str(filename)
+
+    # MP3に変換
+    mp3_path = wav_path.with_suffix(".mp3")
+    audio = AudioSegment.from_wav(wav_path)
+    audio.export(mp3_path, format="mp3")
+
+    # WAVは不要なので削除
+    wav_path.unlink(missing_ok=True)
+
+    return str(mp3_path)
 
 def combine_audio_files(audio_files, output_path):
     if not audio_files:
         return None
-    if len(audio_files) == 1:
-        import shutil
-        shutil.copy2(audio_files[0], output_path)
-        return output_path
-    if AUDIO_MERGE_AVAILABLE:
-        try:
-            combined = AudioSegment.empty()
-            for audio_file in audio_files:
-                if os.path.exists(audio_file):
-                    audio = AudioSegment.from_file(audio_file)
-                    combined += audio
-                    combined += AudioSegment.silent(duration=500)
-            combined.export(output_path, format="mp3")
-            return output_path
-        except Exception as e:
-            print(f"pydub結合失敗: {e}")
-            import shutil
-            shutil.copy2(audio_files[0], output_path)
-            return output_path
-    else:
-        import shutil
-        shutil.copy2(audio_files[0], output_path)
-        return output_path
+    combined = AudioSegment.empty()
+    for audio_file in audio_files:
+        combined += AudioSegment.from_file(audio_file)
+        combined += AudioSegment.silent(duration=500)
+    combined.export(output_path, format="mp3")
+    return output_path
 
 def parse_text_content(text_content):
     lines = []
@@ -93,39 +78,59 @@ def parse_text_content(text_content):
             continue
         speaker_match = re.match(r'\[(男性|女性)\]', text)
         if speaker_match:
-            if current_speaker is not None and current_text:
+            if current_speaker and current_text:
                 speaker_id = SPEAKERS["male"] if current_speaker=="男性" else SPEAKERS["female"]
                 lines.append({"text": " ".join(current_text), "id": speaker_id})
                 current_text = []
             current_speaker = speaker_match.group(1)
             continue
-        if current_speaker is not None:
+        if current_speaker:
             current_text.append(text)
-    if current_speaker is not None and current_text:
+    if current_speaker and current_text:
         speaker_id = SPEAKERS["male"] if current_speaker=="男性" else SPEAKERS["female"]
         lines.append({"text": " ".join(current_text), "id": speaker_id})
     return lines
 
 # ---------------- ルーティング ----------------
+INDEX_HTML = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>VOICEVOX TTS</title>
+</head>
+<body>
+<h2>VOICEVOX TTSデモ</h2>
+<button id="speakBtn">読み上げ</button>
+<script>
+document.getElementById("speakBtn").addEventListener("click", () => {
+    fetch("/synthesize", { method: "POST" })
+      .then(r => r.json())
+      .then(data => {
+          if(data.success){
+              const audio = new Audio(`/audio/${data.filename}`);
+              audio.play();
+          } else {
+              alert("音声生成失敗: " + (data.error || "unknown"));
+          }
+      });
+});
+</script>
+</body>
+</html>
+"""
+
 @app.route("/")
 def index_route():
-    file_path = get_text_file_path()
-    if not os.path.exists(file_path):
-        return Response(json.dumps({"error": "text.txt が存在しません"}, ensure_ascii=False),
-                        mimetype="application/json; charset=utf-8"), 404
-    with open(file_path, 'r', encoding='utf-8') as f:
-        text_content = f.read()
-    lines = parse_text_content(text_content)
-    return Response(json.dumps({"lines": lines}, ensure_ascii=False),
-                    mimetype="application/json; charset=utf-8")
+    return render_template_string(INDEX_HTML)
 
 @app.route("/synthesize", methods=["POST"])
 def synthesize_route():
     file_path = get_text_file_path()
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         return jsonify({"error": "text.txt がありません"}), 400
-    with open(file_path, 'r', encoding='utf-8') as f:
-        text_content = f.read()
+
+    text_content = file_path.read_text(encoding="utf-8")
     lines = parse_text_content(text_content)
     if not lines:
         return jsonify({"error": "合成するデータがありません"}), 400
@@ -141,7 +146,7 @@ def synthesize_route():
 
     output_filename = generate_filename()
     final_audio_path = OUTPUT_DIR / output_filename
-    combined_path = combine_audio_files(temp_files, final_audio_path)
+    combine_audio_files(temp_files, final_audio_path)
 
     # 一時ファイル削除
     for temp_file in temp_files:
