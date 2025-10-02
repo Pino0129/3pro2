@@ -2,7 +2,8 @@
 FROM python:3.11-slim
 
 # 必要パッケージ
-RUN apt-get update && apt-get install -y unzip ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
+    && chmod +x /opt/voicevox_engine/run
 
 # 作業ディレクトリ
 WORKDIR /app
