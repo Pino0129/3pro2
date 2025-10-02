@@ -2,11 +2,10 @@ import os
 import re
 import time
 from datetime import datetime
-from flask import Flask, send_file, jsonify
 from pathlib import Path
 import requests
+from flask import Flask, render_template, Response, jsonify, send_file
 
-# 音声ファイル結合用
 try:
     from pydub import AudioSegment
     AUDIO_MERGE_AVAILABLE = True
@@ -17,19 +16,18 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dummy-secret")
 
-# VOICEVOX 話者ID
+# VOICEVOX設定
 SPEAKERS = {
-    "male": int(os.environ.get("VOICEVOX_MALE_ID", 9)),    # 青山流星
-    "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1)) # 四国めたん
+    "male": int(os.environ.get("VOICEVOX_MALE_ID", 9)),
+    "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1))
 }
-
-# VOICEVOX Engine ホスト（entrypoint.sh で同じコンテナ内で起動する想定）
 VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://localhost:50021")
 
 # 音声出力先
-OUTPUT_DIR = Path(os.environ.get("AUDIO_OUTPUT_DIR", "/tmp/audio_output"))
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = Path("static/audio")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# ---------------- ユーティリティ ----------------
 def clean_text(text):
     return re.sub(r'^セリフ:\s*', '', text).strip()
 
@@ -41,7 +39,6 @@ def generate_filename():
     return f"voice_dialogue_{timestamp}.mp3"
 
 def synthesize_text(text, speaker_id):
-    """VOICEVOX Engine にリクエストして WAV を取得"""
     r = requests.post(f"{VOICEVOX_HOST}/v1/tts", json={
         "text": text,
         "speaker": speaker_id,
@@ -83,7 +80,6 @@ def combine_audio_files(audio_files, output_path):
         return output_path
 
 def parse_text_content(text_content):
-    """text.txt の [男性]/[女性] 指定をパース"""
     lines = []
     current_speaker = None
     current_text = []
@@ -102,25 +98,26 @@ def parse_text_content(text_content):
             continue
         if current_speaker is not None:
             current_text.append(text)
-
     if current_speaker is not None and current_text:
         speaker_id = SPEAKERS["male"] if current_speaker=="男性" else SPEAKERS["female"]
         lines.append({"text": " ".join(current_text), "id": speaker_id})
-
     return lines
 
+# ---------------- ルーティング ----------------
 @app.route("/")
-def index():
+def index_route():
     file_path = get_text_file_path()
     if not os.path.exists(file_path):
-        return jsonify({"error": "text.txt が存在しません"}), 404
+        return Response(json.dumps({"error": "text.txt が存在しません"}, ensure_ascii=False),
+                        mimetype="application/json; charset=utf-8"), 404
     with open(file_path, 'r', encoding='utf-8') as f:
         text_content = f.read()
     lines = parse_text_content(text_content)
-    return jsonify({"lines": lines})
+    return Response(json.dumps({"lines": lines}, ensure_ascii=False),
+                    mimetype="application/json; charset=utf-8")
 
 @app.route("/synthesize", methods=["POST"])
-def synthesize():
+def synthesize_route():
     file_path = get_text_file_path()
     if not os.path.exists(file_path):
         return jsonify({"error": "text.txt がありません"}), 400
@@ -136,31 +133,28 @@ def synthesize():
         audio_path = synthesize_text(text, line["id"])
         if audio_path:
             temp_files.append(audio_path)
-
     if not temp_files:
         return jsonify({"error": "音声生成失敗"}), 500
 
     output_filename = generate_filename()
-    final_audio_path = os.path.join(OUTPUT_DIR, output_filename)
+    final_audio_path = OUTPUT_DIR / output_filename
     combined_path = combine_audio_files(temp_files, final_audio_path)
 
     # 一時ファイル削除
     for temp_file in temp_files:
-        try:
-            os.remove(temp_file)
-        except:
-            pass
+        try: os.remove(temp_file)
+        except: pass
 
-    return jsonify({"success": True, "filename": os.path.basename(combined_path)})
+    return jsonify({"success": True, "filename": output_filename})
 
 @app.route("/audio/<path:filename>")
 def get_audio(filename):
-    fp = os.path.join(OUTPUT_DIR, filename)
-    if not os.path.exists(fp):
+    fp = OUTPUT_DIR / filename
+    if not fp.exists():
         return "Not found", 404
     return send_file(fp, mimetype="audio/mpeg")
 
+# ---------------- 起動 ----------------
 if __name__ == "__main__":
-    # Render 用 PORT 環境変数に対応
-    PORT = int(os.environ.get("PORT", 8000))
+    PORT = int(os.environ.get("PORT", 8001))
     app.run(host="0.0.0.0", port=PORT)
