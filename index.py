@@ -21,7 +21,9 @@ SPEAKERS = {
     "male": int(os.environ.get("VOICEVOX_MALE_ID", 9)),
     "female": int(os.environ.get("VOICEVOX_FEMALE_ID", 1))
 }
-VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://localhost:50021")
+
+# VOICEVOX Engine ホスト（Render環境では service name: voicevox）
+VOICEVOX_HOST = os.environ.get("VOICEVOX_HOST", "http://voicevox:50021")
 
 # 音声出力先
 OUTPUT_DIR = Path("static/audio")
