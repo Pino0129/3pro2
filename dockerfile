@@ -1,25 +1,24 @@
 # ベースイメージ
 FROM python:3.11-slim
 
-# 必要パッケージ
-RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
-    && chmod +x /opt/voicevox_engine/run
+# 必要パッケージ（unzip が必須！）
+RUN apt-get update && apt-get install -y wget unzip curl ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # 作業ディレクトリ
 WORKDIR /app
 
-# Flask アプリと zip ファイルをコピー
+# Flask アプリをコピー
 COPY . /app
 
-# VOICEVOX Engine を zip から展開（ファイル名に合わせて修正）
+# 依存関係
+RUN pip install --no-cache-dir flask requests pydub
+
+# ZIP を解凍（ファイル名はあなたのものに合わせる）
 RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
     && chmod +x /opt/voicevox_engine/run
 
-# Python ライブラリ
-RUN pip install --no-cache-dir flask requests pydub
-
-# ポート
+# ポート公開
 EXPOSE 8001 50021
 
-# 起動コマンド
+# VOICEVOX Engine と Flask を同時起動
 CMD ["sh", "-c", "/opt/voicevox_engine/run --host 0.0.0.0 & python app.py"]
