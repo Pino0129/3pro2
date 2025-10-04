@@ -15,10 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # VOICEVOX エンジン展開＆実行権限付与
 RUN unzip voicevox_engine-0.13.3.zip -d /opt/voicevox_engine \
-    && chmod +x /opt/voicevox_engine/voicevox_engine-0.13.3/run
+    && chmod +x /opt/voicevox_engine/voicevox_engine-0.13.3/run.py
 
 # ポート
 EXPOSE 8001 50021
 
 # 起動（VOICEVOX → Flask）
-CMD sh -c "/opt/voicevox_engine/voicevox_engine-0.13.3/run --host 0.0.0.0 --port 50021 & python index.py"
+CMD sh -c "python /opt/voicevox_engine/voicevox_engine-0.13.3/run.py --host 0.0.0.0 --port 50021 & python index.py"
